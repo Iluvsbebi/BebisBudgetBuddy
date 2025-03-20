@@ -18,7 +18,7 @@ def save_data(data):
         json.dump(data, file, indent=4)
 
 def main():
-    st.title("Bebi Budget Planner")
+    st.title("Bebi's Budget Planner")
 
     # Load or initialize data
     data = load_data()
