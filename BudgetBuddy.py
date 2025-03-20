@@ -2,15 +2,16 @@ import streamlit as st
 import json
 import os
 import matplotlib.pyplot as plt
+from uuid import uuid4
 
-DATA_FILE = 'planner_data.json'
+DATA_FILE = "planner_data.json"
 
 def load_data():
-    """Load saved data from a JSON file, or return an empty structure if not found."""
+    """Load saved data from a JSON file, or return a default structure if not found."""
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, 'r') as file:
             return json.load(file)
-    return {"entries": []}
+    return {"categories": []}
 
 def save_data(data):
     """Save the current data to a JSON file."""
@@ -20,93 +21,126 @@ def save_data(data):
 def main():
     st.title("Bebi's Budget Planner")
 
-    # Load or initialize data
+    # Load data or initialize structure
     data = load_data()
-    if "entries" not in st.session_state:
-        st.session_state.entries = data.get("entries", [])
-
-    # -----------------------------
-    # 1) Add a Category Section
-    # -----------------------------
-    st.header("Add a Category")
+    
+    # Use session_state to avoid reloading data on every interaction
+    if "categories" not in st.session_state:
+        st.session_state.categories = data.get("categories", [])
+    
+    # 1) Add a new category
+    st.header("Add a New Category")
     with st.form("add_category_form", clear_on_submit=True):
-        name = st.text_input("Name")  # e.g., 'Groceries', 'Rent', 'Vacation', etc.
-        category_type = st.selectbox("Category (Saving or Expense)", ["Saving", "Expense"])
-        amount = st.number_input("Amount", min_value=0.0, step=1.0)
-        submitted = st.form_submit_button("Add")
+        cat_name = st.text_input("Name (e.g., 'Cat', 'Groceries', 'Vacation')")
+        cat_type = st.selectbox("Category Type", ["Saving", "Expense"])
+        submitted_cat = st.form_submit_button("Add Category")
         
-        if submitted:
-            if name.strip():
-                # Store each entry as a dictionary
-                entry = {
-                    "name": name.strip(),
-                    "type": category_type,
-                    "amount": amount
+        if submitted_cat:
+            if cat_name.strip():
+                new_category = {
+                    "id": str(uuid4()),        # Unique ID for the category
+                    "name": cat_name.strip(),
+                    "type": cat_type,
+                    "items": []                # List of items under this category
                 }
-                st.session_state.entries.append(entry)
-                st.success(f"Added: {name} (${amount:.2f}) as {category_type}")
+                st.session_state.categories.append(new_category)
+                st.success(f"Added category: {cat_name} ({cat_type})")
             else:
-                st.error("Please provide a valid Name.")
+                st.error("Please provide a valid category name.")
+    
+    # 2) Display each category in an expander, allow adding items
+    st.header("Categories and Their Items")
+    
+    # For calculating overall totals later
+    total_savings = 0.0
+    total_expenses = 0.0
 
-    # -----------------------------
-    # 2) Display Entries
-    # -----------------------------
-    st.header("Current Entries")
-    if st.session_state.entries:
-        for i, entry in enumerate(st.session_state.entries, start=1):
-            st.write(
-                f"**{i}.** Name: {entry['name']} | "
-                f"Category: {entry['type']} | "
-                f"Amount: ${entry['amount']:.2f}"
-            )
-    else:
-        st.write("No entries yet.")
-
-    # -----------------------------
-    # 3) Create Pie Charts
-    # -----------------------------
-    if st.session_state.entries:
-        # Separate data into Saving vs. Expense
-        savings = [e for e in st.session_state.entries if e['type'] == 'Saving']
-        expenses = [e for e in st.session_state.entries if e['type'] == 'Expense']
-        
-        total_savings = sum(e['amount'] for e in savings)
-        total_expenses = sum(e['amount'] for e in expenses)
-        
-        st.header("Pie Charts")
-        
-        # Pie Chart 1: Distribution by Name (All entries together)
-        st.subheader("Distribution by Name")
-        fig1, ax1 = plt.subplots()
-        # Aggregate amounts by name
-        name_amounts = {}
-        for e in st.session_state.entries:
-            name_amounts[e['name']] = name_amounts.get(e['name'], 0) + e['amount']
-        labels1 = list(name_amounts.keys())
-        values1 = list(name_amounts.values())
-        
-        ax1.pie(values1, labels=labels1, autopct='%1.1f%%', startangle=90)
-        ax1.axis('equal')  # Ensure the pie chart is circular
-        st.pyplot(fig1)
-        
-        # Pie Chart 2: Saving vs. Expense
-        st.subheader("Savings vs. Expenses")
-        if total_savings == 0 and total_expenses == 0:
-            st.write("No data to display in this pie chart yet.")
-        else:
-            fig2, ax2 = plt.subplots()
-            labels2 = ["Saving", "Expense"]
-            values2 = [total_savings, total_expenses]
+    for category in st.session_state.categories:
+        with st.expander(f"{category['name']} [{category['type']}]"):
             
-            ax2.pie(values2, labels=labels2, autopct='%1.1f%%', startangle=90)
-            ax2.axis('equal')
-            st.pyplot(fig2)
+            # Calculate the current total for this category
+            category_total = sum(item["amount"] for item in category["items"])
+            st.write(f"**Current Total:** ${category_total:.2f}")
+            
+            # Add item form
+            with st.form(f"add_item_form_{category['id']}", clear_on_submit=True):
+                item_name = st.text_input("Item Name", key=f"item_name_{category['id']}")
+                item_amount = st.number_input("Amount", min_value=0.0, step=1.0, key=f"item_amount_{category['id']}")
+                submitted_item = st.form_submit_button("Add Item")
+                
+                if submitted_item:
+                    if item_name.strip():
+                        new_item = {
+                            "id": str(uuid4()),   # Unique ID for the item
+                            "name": item_name.strip(),
+                            "amount": item_amount
+                        }
+                        category["items"].append(new_item)
+                        st.success(f"Added item: {item_name} (${item_amount:.2f})")
+                    else:
+                        st.error("Please provide a valid item name.")
+            
+            # List items, allow editing/removal
+            if category["items"]:
+                st.subheader("Items")
+                for item in category["items"]:
+                    col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
+                    with col1:
+                        new_name = st.text_input("Name", value=item["name"], key=f"edit_name_{item['id']}")
+                    with col2:
+                        new_amount = st.number_input(
+                            "Amount", 
+                            min_value=0.0, 
+                            value=float(item["amount"]), 
+                            step=1.0, 
+                            key=f"edit_amount_{item['id']}"
+                        )
+                    with col3:
+                        # Update (edit) button
+                        if st.button("Update", key=f"update_{item['id']}"):
+                            item["name"] = new_name.strip()
+                            item["amount"] = new_amount
+                            st.success(f"Updated item: {item['name']} (${item['amount']:.2f})")
+                    with col4:
+                        # Remove (delete) button
+                        if st.button("Remove", key=f"remove_{item['id']}"):
+                            category["items"] = [i for i in category["items"] if i["id"] != item["id"]]
+                            st.warning(f"Removed item: {item['name']}")
+                            st.experimental_rerun()
+            
+            # Update overall totals
+            if category["type"] == "Saving":
+                total_savings += category_total
+            else:
+                total_expenses += category_total
 
-    # -----------------------------
-    # 4) Save Data
-    # -----------------------------
+    # 3) Display overall summary
+    st.header("Overall Summary")
+    st.write(f"**Total Savings:** ${total_savings:.2f}")
+    st.write(f"**Total Expenses:** ${total_expenses:.2f}")
+    
+    # 4) Pie Chart of Categories (by total amount)
+    #    We only plot categories that have a non-zero total
+    category_labels = []
+    category_values = []
+    for category in st.session_state.categories:
+        cat_total = sum(item["amount"] for item in category["items"])
+        if cat_total > 0:
+            category_labels.append(f"{category['name']} ({category['type']})")
+            category_values.append(cat_total)
+    
+    if category_values:
+        st.subheader("Category Distribution (Pie Chart)")
+        fig, ax = plt.subplots()
+        ax.pie(category_values, labels=category_labels, autopct='%1.1f%%', startangle=90)
+        ax.axis('equal')
+        st.pyplot(fig)
+    else:
+        st.write("No category data to display in the pie chart yet.")
+
+    # 5) Save Data Button
     if st.button("Save Planner Data"):
-        data_to_save = {"entries": st.session_state.entries}
+        data_to_save = {"categories": st.session_state.categories}
         save_data(data_to_save)
         st.success("Data saved successfully!")
 
